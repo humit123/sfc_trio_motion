@@ -1,0 +1,819 @@
+'=========== Info ===========
+'바퀴 직경 280mm
+'한바퀴당 pi*직경(280mm)=879.2mm
+'UNIT이 1일때 moveabs(250000), 한바퀴
+'moveabs(타겟 거리)할시 UNIT을 250000/879.2=284.3494085532302
+'UNIT을 위에처럼 설정시 최대 RPM(4000)=speed값을 2344.5로 설정하면됨
+'0~4000RPM = 0~2344.5SPEED
+'기어비 : 25:1, 휠 센터 RPM이 160일때 모터 최대 RPM(4000RPM)
+'=========== H/W Info ===========
+'INGENIA Firm Ver 3.6.5
+'MC4N ECAT (P902) v2.0303
+
+WDOG=OFF
+RAPIDSTOP(2)
+WA(100)
+RAPIDSTOP(2)
+WA(100)
+RAPIDSTOP(2)
+WA(100)
+
+
+'========= INIT H/W =========
+OP(14,ON) 'STO1 ON
+OP(15,ON) 'STO2 ON
+WA(500)
+OP(10,ON) 'DRIVER PWR ON
+OP(28,ON) 'BMS ON
+
+
+'========= INIT _ VAR =========
+DIM once_flag AS BOOLEAN
+DIM buzzer_once_flag AS BOOLEAN
+buzzer_once_flag=FALSE
+DIM lift_once_flag AS BOOLEAN
+once_flag=TRUE
+lift_once_flag=FALSE
+DIM mode_once_flag AS BOOLEAN
+mode_once_flag=FALSE
+
+DIM on_flag AS INTEGER
+on_flag=8
+
+FOR i=0 TO 35
+    VR(i)=0
+NEXT i
+VR(20)=200 'ACC,DEC(0~2000)
+VR(21)=200 'RPM(0~2344.5)
+VR(22)=0.3 'ROTATE VEL RATIO(0~1)
+VR(23)=20000 'REPET DISTANCE[mm]
+VR(24)=2000 'REPEAT WAIT
+
+VR(2500)=0
+VR(2501)=0
+
+
+
+DIM acc_dec AS INTEGER
+DIM target_rpm AS INTEGER
+DIM rotate_ratio AS INTEGER
+DIM repet_distance AS INTEGER
+DIM repeat_wait AS INTEGER
+DIM trio_count AS INTEGER
+
+acc_dec=20
+target_rpm=21
+rotate_ratio=22
+repet_distance=23
+repeat_wait=24
+'auto var
+DIM auto_rpm1 AS FLOAT
+DIM auto_rpm2 AS FLOAT
+
+
+
+'========= INIT _ ECAT =========
+RUN "STARTUP"
+ETHERCAT(0, 0)
+REPEAT
+    'ETHERCAT($93, 0, 2, -1, 0)
+    ETHERCAT(0, 0)
+    WA(100)
+    ETHERCAT ( 3 , 0 , 0 )
+    'WA(1000)
+UNTIL VR(0)=6
+PRINT "There are " ; VR ( 1 )[ 0 ]; " slaves on the EtherCAT bus"
+
+'========= RESET DRIVER =========
+REPEAT
+    WDOG=ON
+    WA(100)
+
+    IF DRIVE_STATUS AXIS(0)<>21031 OR DRIVE_STATUS AXIS(1)<> 21031 THEN
+        FOR i=0 TO 1
+            IF AXISSTATUS AXIS(i)>0 THEN
+                ETHERCAT($64, i) 'Drive reset axis(i)
+                WA(10)
+            ENDIF
+        NEXT i
+
+        DATUM(0) 'trio reset(axis status)
+        WA(10)
+
+        UNIT_CLEAR 'system reset
+        WA(100)
+    ENDIF
+UNTIL DRIVE_STATUS AXIS(0)=21031 AND DRIVE_STATUS AXIS(1)= 21031 AND WDOG=ON
+OP(18,ON)
+'========= RUN =========
+OP(on_flag,ON) 'START Signal
+RUN "TABOS_2EA_485",1
+'RUN "ETHERNET_HEARBIT",2
+RUN "TOPRE0400WD_MODBUS",3
+RUN "ANALOG",4
+RUN "BUZZER",5
+RUN "LIFT_CONTROL",6
+RAPIDSTOP(2)
+WA(100)
+RAPIDSTOP(2)
+WA(100)
+RAPIDSTOP(2)
+WA(100)
+WHILE(TRUE)
+
+    IF(PROC_STATUS PROC(1) <> 0) THEN
+        VR(1)=1
+    ELSE
+        VR(1)=0
+    ENDIF
+'AUTO MODE
+    IF IN(6)=ON THEN
+        IF mode_once_flag=FALSE THEN
+            VR(2)=0
+            SPEED AXIS(0) = 0
+            SPEED AXIS(1) = 0
+            CANCEL AXIS(0)
+            CANCEL AXIS(1)
+            WA(10)
+            RAPIDSTOP(2)
+            mode_once_flag=TRUE
+        ENDIF
+        OP(16,OFF)
+        OP(18,OFF)
+        OP(19,OFF)
+        OP(21,OFF)
+        OP(17,ON) 'lamp1
+        OP(20,ON) 'lamp2
+        OP(24,ON) 'auto melody
+
+
+        IF (FALSE = IS_OPEN #22) AND (FALSE = IS_OPEN #21) THEN'reconnect
+            RAPIDSTOP(2)
+            FOR i=40 TO 60
+                VR(i)=""
+            NEXT i
+            CLOSE #21
+            OPEN #21 AS "TCP:192.168.0.41(5000)" FOR READ_WRITE 'PC
+            'OPEN #21 AS "TCP:192.168.0.44(9999)" FOR READ_WRITE
+            WA(500)
+            CLOSE #22
+            OPEN #22 AS "TCP:192.168.0.13(6000)" FOR READ_WRITE 'APP
+            'OPEN #21 AS "TCP:192.168.0.44(9999)" FOR READ_WRITE
+            WA(500)
+            tx_count1=0
+
+            VR(2500)=0
+            SPEED AXIS(0) = 0
+            SPEED AXIS(1) = 0
+            CANCEL AXIS(0)
+            CANCEL AXIS(1)
+
+
+        ELSEIF -1 = IS_OPEN #21 THEN'connected
+
+            count=0
+            WHILE KEY #21
+                GET #21, VR(40+count)
+                count=count+1
+            WEND
+            'LIFT,PEST CONTROL
+            'LIFT UP=1, LIFT_DOWN=2 ///VR(2500)
+            'PEST ON=1, OFF=0   ///VR(2600)
+            '11xxxxxxxxxxxxxxx55
+            IF VR(40)=48+1 AND VR(41)=48+1 AND VR(55)=48+5 AND VR(56)=48+5 THEN
+                'LIFT
+                'VR(2502)=VR(40)-48
+                'VR(2503)=VR(41)-48
+                VR(2500)=VR(42)-48
+                VR(2501)=VR(43)-48
+                VR(2600)=VR(44)-48
+
+                'MOTOR CONTROL
+            ELSEIF VR(40)=48+7 AND VR(41)=48+7 AND VR(42)=48+6 AND VR(43)=48+6 AND VR(55)=48+5 AND VR(56)=48+5 THEN
+                auto_rpm1=(VR(46)-48)*1000+(VR(47)-48)*100+(VR(48)-48)*10+(VR(49)-48)
+                auto_rpm2=(VR(51)-48)*1000+(VR(52)-48)*100+(VR(53)-48)*10+(VR(54)-48)
+
+                IF VR(45)=$2D THEN
+                    auto_rpm1=auto_rpm1*-1'(0~4000)
+                    ' auto_rpm1 = 0
+                ENDIF
+
+                IF VR(50)=$2D THEN
+                    auto_rpm2=auto_rpm2*-1'(0~4000)
+                    'auto_rpm2 =0
+                ENDIF
+'                PRINT "RPM1,", auto_rpm1
+'                PRINT "RPM2,", auto_rpm2
+
+                'convert to real config_speed(0~2344.5)     '0~4000RPM -> 0~2344.5SPEED
+                'set to speed
+                IF VR(44)=48+1 THEN
+                    'move command
+                    IF MTYPE AXIS(0)<>10 THEN
+                        FORWARD AXIS(0)
+                        SERVO AXIS(0)=ON
+                    ENDIF
+                    IF MTYPE AXIS(1)<>10 THEN
+                        FORWARD AXIS(1)
+                        SERVO AXIS(1)=ON
+                    ENDIF
+                    SPEED AXIS(0)=auto_rpm1*0.586125 '(2344.5*2/8000)
+                    SPEED AXIS(1)=auto_rpm2*0.586125
+                ELSEIF VR(44)=48+0 THEN
+                    SPEED AXIS(0)=0
+                    SPEED AXIS(1)=0
+                    WA(200)
+                    RAPIDSTOP(2)
+                ENDIF
+                FOR i=40 TO 60
+                    VR(i)=""
+                NEXT i
+            ENDIF
+
+
+
+            tx_count=tx_count+1
+            IF tx_count>=1000 THEN
+                tx_count=0
+                PRINT #21, "DRB"
+            ENDIF
+    ELSEIF -1 = IS_OPEN #22 THEN'connected
+
+        count=0
+        WHILE KEY #22
+            GET #22, VR(40+count)
+            count=count+1
+        WEND
+        'LIFT,PEST CONTROL
+        'LIFT UP=1, LIFT_DOWN=2 ///VR(2500)
+        'PEST ON=1, OFF=0   ///VR(2600)
+        IF VR(42)=48+1 AND VR(43)=48+1 THEN
+            VR(42)= 0
+            VR(43)= 0
+            'auto_rpm1=VR(43)-48
+            'LIFT
+            'VR(2502)=VR(40)-48
+            'VR(2503)=VR(41)-48
+            'VR(2500)=VR(42)-48
+            IF VR(44)=48+7 THEN
+                'move command
+                OP(16,OFF)
+                OP(17,OFF)
+                OP(19,OFF)
+                OP(20,OFF)
+                OP(26,ON)
+                OP(18,ON)
+                OP(21,ON)
+                'WA(1)
+                IF MTYPE AXIS(0)<>10 THEN
+                    FORWARD AXIS(0)
+                    SERVO AXIS(0)=ON
+                ENDIF
+                IF MTYPE AXIS(1)<>10 THEN
+                    FORWARD AXIS(1)
+                    SERVO AXIS(1)=ON
+                ENDIF
+
+                ACCEL AXIS(0)=VR(acc_dec)
+                ACCEL AXIS(1)=VR(acc_dec)
+                DECEL AXIS(0)=VR(acc_dec)
+                DECEL AXIS(1)=VR(acc_dec)
+                SPEED AXIS(0) = VR(target_rpm)
+                SPEED AXIS(1) = -VR(target_rpm)
+                VR(2400) = 7
+
+            ENDIF
+            IF VR(44)=48+8 THEN
+                OP(16,OFF)
+                OP(17,OFF)
+                OP(19,OFF)
+                OP(20,OFF)
+                OP(26,ON)
+                OP(18,ON)
+                OP(21,ON)
+                WA(1)
+                IF MTYPE AXIS(0)<>10 THEN
+                    FORWARD AXIS(0)
+                    SERVO AXIS(0)=ON
+                ENDIF
+                IF MTYPE AXIS(1)<>10 THEN
+                    FORWARD AXIS(1)
+                    SERVO AXIS(1)=ON
+                ENDIF
+
+                ACCEL AXIS(0)=VR(acc_dec)
+                ACCEL AXIS(1)=VR(acc_dec)
+                DECEL AXIS(0)=VR(acc_dec)
+                DECEL AXIS(1)=VR(acc_dec)
+                SPEED AXIS(0) = -VR(target_rpm)
+                SPEED AXIS(1) = VR(target_rpm)
+
+                VR(2400) = 8
+
+            ENDIF
+            IF VR(44)=48+5 THEN
+                'move command
+                OP(16,OFF)
+                OP(17,OFF)
+                OP(19,OFF)
+                OP(20,OFF)
+                OP(26,ON)
+                OP(18,ON)
+                OP(21,ON)
+                'WA(1)
+                IF MTYPE AXIS(0)<>10 THEN
+                    FORWARD AXIS(0)
+                    SERVO AXIS(0)=ON
+                ENDIF
+                IF MTYPE AXIS(1)<>10 THEN
+                    FORWARD AXIS(1)
+                    SERVO AXIS(1)=ON
+                ENDIF
+
+                ACCEL AXIS(0)=VR(acc_dec)
+                ACCEL AXIS(1)=VR(acc_dec)
+                DECEL AXIS(0)=VR(acc_dec)
+                DECEL AXIS(1)=VR(acc_dec)
+                SPEED AXIS(0) = -VR(target_rpm)*VR(rotate_ratio)
+                SPEED AXIS(1) = -VR(target_rpm)*VR(rotate_ratio)
+                VR(2400) = 5
+            ENDIF
+            IF VR(44)=48+6 THEN
+                'move command
+                OP(16,OFF)
+                OP(17,OFF)
+                OP(19,OFF)
+                OP(20,OFF)
+                OP(26,ON)
+                OP(18,ON)
+                OP(21,ON)
+                'WA(1)
+                IF MTYPE AXIS(0)<>10 THEN
+                    FORWARD AXIS(0)
+                    SERVO AXIS(0)=ON
+                ENDIF
+                IF MTYPE AXIS(1)<>10 THEN
+                    FORWARD AXIS(1)
+                    SERVO AXIS(1)=ON
+                ENDIF
+
+                ACCEL AXIS(0)=VR(acc_dec)
+                ACCEL AXIS(1)=VR(acc_dec)
+                DECEL AXIS(0)=VR(acc_dec)
+                DECEL AXIS(1)=VR(acc_dec)
+                SPEED AXIS(0) = VR(target_rpm)*VR(rotate_ratio)
+                SPEED AXIS(1) = VR(target_rpm)*VR(rotate_ratio)
+                VR(2400) = 6
+            ENDIF
+            IF VR(44)=48+9 THEN
+                OP(18,OFF)
+                OP(21,OFF)
+                OP(26,OFF)
+
+                SPEED AXIS(0) = 0
+                SPEED AXIS(1) = 0
+                CANCEL AXIS(0)
+                CANCEL AXIS(1)
+                VR(2400) = 0
+            ENDIF
+
+            IF VR(44)=48+1 THEN
+                VR(2500)=1
+            ENDIF
+            IF VR(44)=48+2 THEN
+                VR(2500)=2
+            ENDIF
+
+            IF VR(44)=48+3 THEN
+                IF VR(target_rpm)<2000 THEN
+                    VR(target_rpm)=VR(target_rpm)+230
+                ENDIF
+            ENDIF
+            IF VR(44)=48+4 THEN
+
+                IF VR(target_rpm)>230 THEN
+                    VR(target_rpm)=VR(target_rpm)-230
+                ENDIF
+            ENDIF
+            IF VR(44)=48 THEN
+                'move command
+
+                OP(18,OFF)
+                OP(21,OFF)
+                OP(26,OFF)
+
+                RAPIDSTOP(2)
+                VR(2500)=0
+                SPEED AXIS(0) = 0
+                SPEED AXIS(1) = 0
+                CANCEL AXIS(0)
+                CANCEL AXIS(1)
+                VR(2400) = 0
+                VR(3996) = 0
+                VR(3997) = 0
+
+            ENDIF
+        ENDIF
+
+
+        tx_count2=tx_count2+1
+        IF tx_count2>=500 THEN
+            tx_count2=0
+            IF VR(2500)=0 THEN
+
+                IF VR(2400)=0 THEN
+                    PRINT #22, "1/Stop/Zone1/Stop/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=7 THEN
+                    PRINT #22, "1/Move Front/Zone1/Stop/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=8 THEN
+                    PRINT #22, "1/Move Rear/Zone1/Stop/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=5 THEN
+                    PRINT #22, "1/Move Left/Zone1/Stop/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=6 THEN
+                    PRINT #22, "1/Move Right/Zone1/Stop/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ENDIF
+
+            ELSEIF VR(2500)=1 THEN
+                IF VR(2400)=0 THEN
+                    PRINT #22, "1/Stop/Zone1/Up/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=7 THEN
+                    PRINT #22, "1/Move Front/Zone1/Up/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=8 THEN
+                    PRINT #22, "1/Move Rear/Zone1/Up/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=5 THEN
+                    PRINT #22, "1/Move Left/Zone1/Up/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=6 THEN
+                    PRINT #22, "1/Move Right/Zone1/Up/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ENDIF
+
+            ELSEIF VR(2500)=2 THEN
+                IF VR(2400)=0 THEN
+                    PRINT #22, "1/Stop/Zone1/Down/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=7 THEN
+                    PRINT #22, "1/Move Front/Zone1/Down/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=8 THEN
+                    PRINT #22, "1/Move Rear/Zone1/Down/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=5 THEN
+                    PRINT #22, "1/Move Left/Zone1/Down/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ELSEIF VR(2400)=6 THEN
+                    PRINT #22, "1/Move Right/Zone1/Down/"+LEFT(STR(VR(target_rpm)/23),2)+"/"+LEFT(STR(VR(11)),2)
+                ENDIF
+            ENDIF
+        ENDIF
+    ENDIF
+
+
+'MMANUAL MODE
+    ELSEIF IN(6)=OFF THEN
+        OP(24,OFF) 'auto melody
+        mode_once_flag=FALSE
+'        IF once_flag=FALSE THEN
+'            once_flag=TRUE
+'            SPEED AXIS(0)=0
+'            SPEED AXIS(1)=0
+'            WA(3000)
+'            SERVO AXIS(0)=OFF
+'            SERVO AXIS(1)=OFF
+'            RAPIDSTOP(2)
+'            WDOG=OFF
+'        ENDIF
+
+'========= MOVE =========
+        IF VR(25)=1 THEN 'REPEAT
+'            MOVEABS(repet_distance)
+'            DRIVE_PARAMETER AXIS(0) = VR(2)
+'            DRIVE_PARAMETER AXIS(1) = -VR(2)
+'
+'            WA(VR(repeat_wait))
+'            DRIVE_PARAMETER AXIS(0) = -VR(2)
+'            DRIVE_PARAMETER AXIS(1) = VR(2)
+'
+'            WA(VR(repeat_wait))
+'
+        ELSE 'NO REPEAT
+
+            SELECT_CASE VR(2)
+                CASE 1 'left_go
+                    'IF IN(18)=ON AND IN(17)=ON THEN
+                    IF IN(17)=ON THEN
+                        OP(16,OFF)
+                        OP(17,OFF)
+                        OP(19,OFF)
+                        OP(20,OFF)
+                        OP(18,ON)
+                        OP(21,ON)
+                        OP(26,ON)
+                        WA(1)
+                        IF MTYPE AXIS(0)<>10 THEN
+                            FORWARD AXIS(0)
+                            SERVO AXIS(0)=ON
+                        ENDIF
+                        IF MTYPE AXIS(1)<>10 THEN
+                            FORWARD AXIS(1)
+                            SERVO AXIS(1)=ON
+                        ENDIF
+
+                        ACCEL AXIS(0)=VR(acc_dec)
+                        ACCEL AXIS(1)=VR(acc_dec)
+                        DECEL AXIS(0)=VR(acc_dec)
+                        DECEL AXIS(1)=VR(acc_dec)
+                        SPEED AXIS(0) = -VR(target_rpm)
+                        SPEED AXIS(1) = VR(target_rpm)*0.5
+                    ENDIF
+
+
+                CASE 2 'go
+                    'IF IN(18)=ON AND IN(17)=ON THEN
+                    IF IN(17)=ON THEN
+                        OP(16,OFF)
+                        OP(17,OFF)
+                        OP(19,OFF)
+                        OP(20,OFF)
+                        OP(26,ON)
+                        OP(18,ON)
+                        OP(21,ON)
+                        WA(1)
+                        IF MTYPE AXIS(0)<>10 THEN
+                            FORWARD AXIS(0)
+                            SERVO AXIS(0)=ON
+                        ENDIF
+                        IF MTYPE AXIS(1)<>10 THEN
+                            FORWARD AXIS(1)
+                            SERVO AXIS(1)=ON
+                        ENDIF
+
+                        ACCEL AXIS(0)=VR(acc_dec)
+                        ACCEL AXIS(1)=VR(acc_dec)
+                        DECEL AXIS(0)=VR(acc_dec)
+                        DECEL AXIS(1)=VR(acc_dec)
+                        SPEED AXIS(0) = -VR(target_rpm)
+                        SPEED AXIS(1) = VR(target_rpm)
+                    ENDIF
+                CASE 3 'right_go
+                    'IF IN(18)=ON AND IN(17)=ON THEN
+                    IF IN(17)=ON THEN
+                        OP(16,OFF)
+                        OP(17,OFF)
+                        OP(19,OFF)
+                        OP(20,OFF)
+                        OP(26,ON)
+                        OP(18,ON)
+                        OP(21,ON)
+                        WA(1)
+                        IF MTYPE AXIS(0)<>10 THEN
+                            FORWARD AXIS(0)
+                            SERVO AXIS(0)=ON
+                        ENDIF
+                        IF MTYPE AXIS(1)<>10 THEN
+                            FORWARD AXIS(1)
+                            SERVO AXIS(1)=ON
+                        ENDIF
+
+                        ACCEL AXIS(0)=VR(acc_dec)
+                        ACCEL AXIS(1)=VR(acc_dec)
+                        DECEL AXIS(0)=VR(acc_dec)
+                        DECEL AXIS(1)=VR(acc_dec)
+                        SPEED AXIS(0) = -VR(target_rpm)*0.5
+                        SPEED AXIS(1) = VR(target_rpm)
+                    ENDIF
+                CASE 4 'right
+                    'IF IN(18)=ON AND IN(17)=ON THEN
+                    IF IN(17)=ON THEN
+                        OP(16,OFF)
+                        OP(17,OFF)
+                        OP(19,OFF)
+                        OP(20,OFF)
+                        OP(26,ON)
+                        OP(18,ON)
+                        OP(21,ON)
+                        WA(1)
+                        IF MTYPE AXIS(0)<>10 THEN
+                            FORWARD AXIS(0)
+                            SERVO AXIS(0)=ON
+                        ENDIF
+                        IF MTYPE AXIS(1)<>10 THEN
+                            FORWARD AXIS(1)
+                            SERVO AXIS(1)=ON
+                        ENDIF
+                        ACCEL AXIS(0)=VR(acc_dec)
+                        ACCEL AXIS(1)=VR(acc_dec)
+                        DECEL AXIS(0)=VR(acc_dec)
+                        DECEL AXIS(1)=VR(acc_dec)
+                        SPEED AXIS(0) = VR(target_rpm)*VR(rotate_ratio)
+                        SPEED AXIS(1) = VR(target_rpm)*VR(rotate_ratio)
+                    ENDIF
+                CASE 5 'right_back
+                    'IF IN(18)=ON AND IN(17)=ON THEN
+                    IF IN(17)=ON THEN
+                        OP(16,OFF)
+                        OP(17,OFF)
+                        OP(19,OFF)
+                        OP(20,OFF)
+                        OP(26,ON)
+                        OP(18,ON)
+                        OP(21,ON)
+                        WA(1)
+                        IF MTYPE AXIS(0)<>10 THEN
+                            FORWARD AXIS(0)
+                            SERVO AXIS(0)=ON
+                        ENDIF
+                        IF MTYPE AXIS(1)<>10 THEN
+                            FORWARD AXIS(1)
+                            SERVO AXIS(1)=ON
+                        ENDIF
+
+                        ACCEL AXIS(0)=VR(acc_dec)
+                        ACCEL AXIS(1)=VR(acc_dec)
+                        DECEL AXIS(0)=VR(acc_dec)
+                        DECEL AXIS(1)=VR(acc_dec)
+                        SPEED AXIS(0) = VR(target_rpm)*0.5
+                        SPEED AXIS(1) = -VR(target_rpm)
+                    ENDIF
+                CASE 6 'back
+                    'IF IN(18)=ON AND IN(17)=ON THEN
+                    IF IN(17)=ON THEN
+                        OP(16,OFF)
+                        OP(17,OFF)
+                        OP(19,OFF)
+                        OP(20,OFF)
+                        OP(26,ON)
+                        OP(18,ON)
+                        OP(21,ON)
+                        WA(1)
+                        IF MTYPE AXIS(0)<>10 THEN
+                            FORWARD AXIS(0)
+                            SERVO AXIS(0)=ON
+                        ENDIF
+                        IF MTYPE AXIS(1)<>10 THEN
+                            FORWARD AXIS(1)
+                            SERVO AXIS(1)=ON
+                        ENDIF
+
+                        ACCEL AXIS(0)=VR(acc_dec)
+                        ACCEL AXIS(1)=VR(acc_dec)
+                        DECEL AXIS(0)=VR(acc_dec)
+                        DECEL AXIS(1)=VR(acc_dec)
+                        SPEED AXIS(0) = VR(target_rpm)
+                        SPEED AXIS(1) = -VR(target_rpm)
+                    ENDIF
+                CASE 7 'left_back
+                    'IF IN(18)=ON AND IN(17)=ON THEN
+                    IF IN(17)=ON THEN
+                        OP(16,OFF)
+                        OP(17,OFF)
+                        OP(19,OFF)
+                        OP(20,OFF)
+                        OP(26,ON)
+                        OP(18,ON)
+                        OP(21,ON)
+                        WA(1)
+                        IF MTYPE AXIS(0)<>10 THEN
+                            FORWARD AXIS(0)
+                            SERVO AXIS(0)=ON
+                        ENDIF
+                        IF MTYPE AXIS(1)<>10 THEN
+                            FORWARD AXIS(1)
+                            SERVO AXIS(1)=ON
+                        ENDIF
+
+                        ACCEL AXIS(0)=VR(acc_dec)
+                        ACCEL AXIS(1)=VR(acc_dec)
+                        DECEL AXIS(0)=VR(acc_dec)
+                        DECEL AXIS(1)=VR(acc_dec)
+                        SPEED AXIS(0) = VR(target_rpm)
+                        SPEED AXIS(1) = -VR(target_rpm)*0.5
+                    ENDIF
+                CASE 8 'left
+                    'IF IN(18)=ON AND IN(17)=ON THEN
+                    IF IN(17)=ON THEN
+                        OP(16,OFF)
+                        OP(17,OFF)
+                        OP(19,OFF)
+                        OP(20,OFF)
+                        OP(26,ON)
+                        OP(18,ON)
+                        OP(21,ON)
+                        WA(1)
+                        IF MTYPE AXIS(0)<>10 THEN
+                            FORWARD AXIS(0)
+                            SERVO AXIS(0)=ON
+                        ENDIF
+
+                        IF MTYPE AXIS(1)<>10 THEN
+                            FORWARD AXIS(1)
+                            SERVO AXIS(1)=ON
+                        ENDIF
+                        ACCEL AXIS(0)=VR(acc_dec)
+                        ACCEL AXIS(1)=VR(acc_dec)
+                        DECEL AXIS(0)=VR(acc_dec)
+                        DECEL AXIS(1)=VR(acc_dec)
+                        SPEED AXIS(0) = -VR(target_rpm)*VR(rotate_ratio)
+                        SPEED AXIS(1) = -VR(target_rpm)*VR(rotate_ratio)
+                    ENDIF
+                CASE ELSE
+
+                    OP(18,OFF)
+                    OP(21,OFF)
+                    OP(26,OFF)
+
+
+                    SPEED AXIS(0) = 0
+                    SPEED AXIS(1) = 0
+                    CANCEL AXIS(0)
+                    CANCEL AXIS(1)
+            END_CASE
+        ENDIF
+'========= MANUAL_RESET =========
+        IF IN(7)=1 OR VR(34)=1 THEN
+            PRINT "RESET"
+
+            REPEAT
+                FOR i=0 TO 1
+                    BASE(i)
+                    WA(10)
+                    IF AXISSTATUS>0 THEN
+                        DRIVE_CW_MODE=1 ' set the control word to be user mode
+                        WA(50)
+                        DRIVE_CONTROLWORD.7 =1 ' fault reset
+                        WA(50)
+                        DRIVE_CW_MODE=0 ' set the control word back to wdog mode
+                    ENDIF
+                    DATUM(0)
+                    UNIT_CLEAR
+                NEXT i
+            UNTIL AXISSTATUS AXIS(0)=0 AND AXISSTATUS AXIS(1)=0
+
+            buzzer_once_flag=FALSE
+            WDOG=ON
+
+        ENDIF
+
+    ENDIF
+
+    IF (DRIVE_STATUS AXIS(0)<>21031) OR (DRIVE_STATUS AXIS(1)<>21031) THEN
+        'error
+
+        VR(33)=1 'reset switch flag
+
+        OP(17,OFF)
+        OP(18,OFF)
+        OP(20,OFF)
+        OP(21,OFF)
+
+        OP(16,ON)
+        OP(19,ON)
+
+    ELSE
+        OP(16,OFF)
+        OP(17,OFF)
+        OP(18,OFF)
+        OP(19,OFF)
+        OP(20,OFF)
+        OP(21,OFF)
+        VR(33)=0
+    ENDIF
+
+
+
+
+'========= FAULT NOTIFICATION =========
+    'ENCODER ERROR
+    IF(ABS(ENCODER AXIS(0))>2147480000) OR (ABS(ENCODER AXIS(1))>2147480000) THEN '2147483648보다 크면
+        PRINT "encoder maximum was exceeded"
+        WDOG=OFF
+        WA(100)
+        CO_WRITE_AXIS(0, $2240, 4, 7, -1, 1) 'encoder1 encoder reset
+        CO_WRITE_AXIS(1, $2240, 4, 7, -1, 1) 'encoder2 encoder reset
+    ENDIF
+
+
+    trio_count=trio_count+1
+    IF trio_count>=500 THEN
+        trio_count=0
+        IF VR(19)=$FF THEN
+            VR(19)=0
+            'PRINT VR(16)
+        ELSE
+            VR(19)=$FF
+            'PRINT VR(16)
+        ENDIF
+
+    ENDIF
+
+
+
+
+
+    VR(29)=DRIVE_STATUS AXIS(0)
+    VR(30)=DRIVE_STATUS AXIS(0)
+    VR(31)=SPEED AXIS(0)
+    VR(32)=SPEED AXIS(0)
+    IF WDOG=ON THEN
+        VR(18)=1
+    ELSE
+        VR(18)=0
+    ENDIF
+
+WEND
+
+
