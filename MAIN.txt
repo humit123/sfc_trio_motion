@@ -1,11 +1,35 @@
 '=========== Info ===========
 '바퀴 직경 280mm
 '한바퀴당 pi*직경(280mm)=879.2mm
-'UNIT이 1일때 moveabs(250000), 한바퀴
-'moveabs(타겟 거리)할시 UNIT을 250000/879.2=284.3494085532302
+'UNIT(TRIO 제어기에서 움직임의 기본 단위)이 1일때 moveabs(250000), 한바퀴
+'UNIT 1(기본값) = 1 pulse, 즉 모터 펄스 단위로 직접 제어, 물리적 해상도 기반
+'moveabs는 절대 위치로 이동하는 명령, moveabs(250000)는 250,000 펄스 위치로 이동하라는 뜻
+'250,000 pulse = 모터 1회전(모터임!)
+'실제 환경 바퀴 슬립, 기어 유격(백래쉬), 부하 변화(모터 토크 문제), 속도 가감속 오차(undershoot 및 overshoot), 외부 장애물/마찰
+' 기본적인 슬립 보정, 거리 보정 등은 TRIO 내부에서 직접 처리하는 것이 필요
+'moveabs(타겟 위치)로 변경하기 위해서 UNIT을 250000/879.2=284.3494085532302
+'타켓 위치 1mm를 이동하기 위해서는 284.3494085532302 펄스가 필요(모터 1회전당 펄스 수(encoder resolution) / 바퀴 1회전당 이동거리(pi x 직경))
+'UNIT을 284.3494085532302 펄스로 설정하면 1 UNIT에 1mm 이동, 예를들어 moveabs(1000)하면 1m를 이동함
+'UNIT = 284.35 (
 'UNIT을 위에처럼 설정시 최대 RPM(4000)=speed값을 2344.5로 설정하면됨
 '0~4000RPM = 0~2344.5SPEED
+'speed 값이란 원래 mm/sec인데, TRIO에서는 내부적으로 1초에 몇 UNIT 이동할지를 지정하는 개념, 따라서 speed 1은 1초 1UNIT 이동 (284.35 펄스 이동), 따라서 1초에 1mm이동하는 값
 '기어비 : 25:1, 휠 센터 RPM이 160일때 모터 최대 RPM(4000RPM)
+'바퀴 rpm이 160면 초당회전수는 160/60 = 약 2.6667 rev/sec인데 (초당 약 2.6667 바퀴 회전)
+'초당 이동 거리(즉 speed)는 879.2 mm이므로 879.2 * 2.6667 = 2344.5 mm/sec
+'바퀴 rpm이 x면 초당회전수는 x/60 rev/sec이고 초당이동거리를 곱하면 x/60*879.2 mm/sec가 되어야한다.
+
+'<참고: 모터 계산>
+'4000rpm이면 초당회전수는 4000/60 = 66.67 rev/sec인데
+'모터1회전당250,000 pulse이므로 초당 66.67*250000 = 16,667,500 pulses/sec가 1초의 모터 펄스
+'다시 UNIT환산하면 1 unit에 284.35 pulses로 설정(284.35에 1mm)했으으므로, 16,667,500 / 284.35 는 대략 58,620.69 unit/sec
+'다시말해 초당 바퀴가 최대 58,620.69 mm/sec를 이동한다는 것 (초당 5.8m/s)
+'이건 speed = (x/60*250000)/284.35
+
+'상위제어기로부터 받아오는 RPM 값은 모터 RPM이다.
+'speed = 상위제어기 rpm * 0.586125 = (x/60*250000)/284.35 이므로.
+'그리고, 이것은 바꿔말하면 (motor_rpm / 25(기어비))/60*879.2 mm/sec와도 동일하다.
+
 '=========== H/W Info ===========
 'INGENIA Firm Ver 3.6.5
 'MC4N ECAT (P902) v2.0303
@@ -28,6 +52,23 @@ OP(28,ON) 'BMS ON
 
 
 '========= INIT _ VAR =========
+DIM prev_enc0 AS INTEGER
+DIM prev_enc1 AS INTEGER
+DIM delta_pos0 AS FLOAT
+DIM delta_pos1 AS FLOAT
+DIM delta_rev0 AS FLOAT
+DIM delta_rev1 AS FLOAT
+DIM tx_count AS INTEGER
+
+prev_enc0 = ENCODER AXIS(0)
+prev_enc1 = ENCODER AXIS(1)
+delta_pos0 = 0
+delta_pos1 = 0
+delta_rev0 = 0
+delta_rev1 = 0
+tx_count = 0
+
+'기존변수
 DIM once_flag AS BOOLEAN
 DIM buzzer_once_flag AS BOOLEAN
 buzzer_once_flag=FALSE
@@ -233,9 +274,43 @@ WHILE(TRUE)
 
 
             tx_count=tx_count+1
-            IF tx_count>=1000 THEN
+            IF tx_count>=20 THEN '1000루프(약루프당5ms)를 20루프(약 100ms)로 조정
                 tx_count=0
-                PRINT #21, "DRB"
+				' 현재 인코더 값
+				cur_enc0 = ENCODER AXIS(0)
+				cur_enc1 = ENCODER AXIS(1)
+
+				' Δ 인코더
+				d_enc0 = cur_enc0 - prev_enc0
+				d_enc1 = cur_enc1 - prev_enc1
+
+				' Δ 거리 (mm)
+				d_mm0 = d_enc0 / 284.35
+				d_mm1 = d_enc1 / 284.35
+
+				' Δ 회전수 (rev), 모터 기준
+				d_rev0 = d_enc0 / 250000.0
+				d_rev1 = d_enc1 / 250000.0
+
+				' 누적 Δ POS / REV
+				delta_pos0 = delta_pos0 + d_mm0
+				delta_pos1 = delta_pos1 + d_mm1
+				delta_rev0 = delta_rev0 + d_rev0
+				delta_rev1 = delta_rev1 + d_rev1
+
+				' 속도 VEL (mm/s)
+				vel0 = d_mm0 / 0.1
+				vel1 = d_mm1 / 0.1
+
+				' 전송
+				'PRINT #21, "DRB"
+				PRINT #21, "POS,", delta_pos0, ",", delta_pos1
+				PRINT #21, "VEL,", vel0, ",", vel1
+				PRINT #21, "REV,", delta_rev0, ",", delta_rev1
+
+				' 기준값 갱신
+				prev_enc0 = cur_enc0
+				prev_enc1 = cur_enc1
             ENDIF
     ELSEIF -1 = IS_OPEN #22 THEN'connected
 
