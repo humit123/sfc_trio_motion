@@ -1,0 +1,42 @@
+WHILE(TRUE)
+'    IF VR(26)=1 THEN
+'        OP(12,ON) 'down
+'        OP(13,ON)
+'        WA(1)
+'        IF IN(17)=1 THEN
+'            OP(11,OFF)
+'        ELSE
+'            OP(11,ON)
+'        ENDIF
+'    ELSEIF VR(26)=-1 THEN
+'        OP(12,OFF) 'up
+'        OP(13,OFF)
+'        WA(1)
+'        IF IN(16)=1 THEN
+'            OP(11,OFF)
+'        ELSE
+'            OP(11,ON)
+'        ENDIF
+'
+'    ENDIF
+    IF IN(6)=0 THEN
+        OP(12,ON) 'down
+        OP(13,ON)
+        WA(1)
+        IF IN(17)=1 THEN
+            OP(11,OFF)
+        ELSE
+            OP(11,ON)
+        ENDIF
+    ELSEIF IN(6)=1 THEN
+        OP(12,OFF) 'up
+        OP(13,OFF)
+        WA(1)
+        IF IN(16)=1 THEN
+            OP(11,OFF)
+        ELSE
+            OP(11,ON)
+        ENDIF
+
+    ENDIF
+WEND

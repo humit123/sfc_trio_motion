@@ -1,0 +1,15 @@
+DIM tim AS INTEGER
+
+WHILE TRUE
+    IF VR(33)=1 THEN
+        tim=200
+    ELSE
+        tim=0
+        OP(8,OFF)
+    ENDIF
+
+    TIMER(0,8,1,tim) 'turns ON output 8 for 100milliseconds
+    WA(400) 'Waits 200 milliseconds to complete the 5Hz period
+
+WEND
+'OP(1,OFF)

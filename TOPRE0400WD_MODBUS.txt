@@ -1,0 +1,87 @@
+
+
+ETHERNET ( 1 , - 1 , 14 , 6 , 1 , 3 ) 'VR
+ETHERNET ( 1 , - 1 , 14 , 6 , 2 , 2 ) 'integer 32 bit on master
+
+DIM modbus_count AS INTEGER
+
+my_slot = - 1
+
+open_modbus = $00
+close_modbus = $01
+get_status = $02
+ex_modbus_func = $03
+
+get_error_log = $10
+
+
+vr_handle = 200
+vr_status = 201
+default_handle = 0
+
+' check if Modbus is already open
+MODBUS (get_status, my_slot, default_handle, vr_status)
+IF VR (vr_status) = 1 THEN
+    ' close the connection so that it can be re-opened
+    MODBUS (close_modbus, my_slot, default_handle)
+ENDIF
+
+' open the modbus server (remote slave)
+IF NOT MODBUS (open_modbus, my_slot, 192 , 168 , 0 , 100 , 502 , vr_handle) THEN
+    PRINT "Err: failed to open modbusTCP connection"
+    STOP
+ELSE
+    PRINT "Successfully opened connection, handle : " , VR (vr_handle) [ 0 ]
+ENDIF
+
+
+
+WHILE TRUE
+
+    ' Modbus function 3 - read holding registers
+    ' get 2 values from holding registers 2048 to 2049 copy to VR(200).. VR(201)
+
+
+'    IF MODBUS (ex_modbus_func, my_slot, VR (vr_handle), 3 , 50 , 4 , 26 ) = FALSE THEN
+'        PRINT # 5 , "Error reading holding registers 2048..2049"
+'        'GOSUB check_error
+'    ENDIF
+'    WA ( 50 )
+
+
+    ' send 30 values to holding registers 0 to 70, get from VR(0)...
+    IF MODBUS (ex_modbus_func, my_slot, VR (vr_handle), 16 , 0 , 70 , 0 ) = FALSE THEN
+        PRINT # 5 , "Error writing holding registers 500.."
+        'GOSUB check_error
+    ENDIF
+
+    WA ( 50 )
+    modbus_count=modbus_count+1
+    IF modbus_count>=5 THEN
+        modbus_count=0
+        IF VR(15)=$FF THEN
+            VR(15)=0
+        ELSE
+            VR(15)=$FF
+        ENDIF
+
+    ENDIF
+
+
+
+WEND
+'check_error:
+'
+'IF MODBUS(mb_get_status, mb_slot, VR(mb_handle), mb_status) = TRUE THEN
+'    PRINT #5, "Modbus Status: "; HEX(VR(mb_status)); " Hex"
+'ELSE
+'    PRINT #5, "Error getting Status"
+'ENDIF
+'
+'IF MODBUS(mb_geterrorlog, mb_slot, VR(mb_handle), 0, mb_status) = TRUE THEN
+'    PRINT #5, "Modbus Error Code: "; HEX(VR(mb_status)); " Hex"
+'ELSE
+'    PRINT #5, "Error getting Error Log"
+'ENDIF
+'
+'RETURN

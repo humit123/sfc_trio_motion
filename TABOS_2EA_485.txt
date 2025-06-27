@@ -1,0 +1,272 @@
+'////////////////////////////////////////////
+'TABOS DDATA
+'전압, 전류, SOC, 배터리 상태, 온도, 전류 잔량
+'////////////////////////////////////////////
+'baud:19200, data:8bit, stop:1, parity:0, port:2, mode:XON/XOFF inactive
+SETCOM(19200,8,1,0,2,0)
+
+'DIM b AS STRING
+DIM recv_data AS STRING(100)
+DIM id0_error_count AS INTEGER
+DIM id1_error_count AS INTEGER
+DIM b AS STRING ( 100 )
+DIM d AS STRING ( 3 )
+d=CHR(160)+CHR(13)+CHR(10)
+
+DIM bat1_voltage AS INTEGER
+DIM bat1_current AS INTEGER
+DIM bat1_soc AS INTEGER
+DIM bat1_state AS INTEGER
+DIM bat1_temperature AS INTEGER
+DIM bat1_current_left AS INTEGER
+
+DIM bat2_voltage AS INTEGER
+DIM bat2_current AS INTEGER
+DIM bat2_soc AS INTEGER
+DIM bat2_state AS INTEGER
+DIM bat2_temperature AS INTEGER
+DIM bat2_current_left AS INTEGER
+
+bat1_voltage=3
+bat1_current=4
+bat1_soc=5
+bat1_state=6
+bat1_temperature=7
+bat1_current_left=8
+
+
+bat2_voltage=9
+bat2_current=10
+bat2_soc=11
+bat2_state=12
+bat2_temperature=13
+bat2_current_left=14
+DIM cc AS INTEGER
+DIM rs485_count AS INTEGER
+WHILE TRUE
+
+    WA(100)
+    PRINT #2, CHR($AF);CHR($FA);CHR($60);CHR($05);CHR($01);CHR($60);CHR($4F);CHR($02);CHR($17);CHR($AF);CHR($A0);
+
+    WA(100)
+    PRINT #2, CHR($AF);CHR($FA);CHR($61);CHR($05);CHR($01);CHR($61);CHR($4F);CHR($02);CHR($19);CHR($AF);CHR($A0);
+    WA(10)
+    count=0
+    WHILE KEY #2
+        count=count+1
+        GET #2, VR(1100+count)
+    WEND
+    start_num=0
+    end_num=0
+
+
+
+
+
+    rs485_count=rs485_count+1
+    IF rs485_count>=5 THEN
+        rs485_count=0
+        IF VR(16)=$FF THEN
+            VR(16)=0
+            'PRINT VR(16)
+        ELSE
+            VR(16)=$FF
+            'PRINT VR(16)
+        ENDIF
+
+    ENDIF
+
+'////////////////////////////////////////////
+'ID 1
+'PARSING
+'////////////////////////////////////////////
+
+    'ID1 check data validation and parsing
+    FOR i=0 TO 63
+        IF VR(i+1100)=$AF AND VR(i+1+1100)=$FA AND VR(i+2+1100)=$61 AND VR(i+3+1100)=$0F AND VR(i+4+1100)=$03 AND _
+                VR(i+5+1100)=$61 AND VR(i+19+1100)=$AF AND VR(i+20+1100)=$A0 THEN
+            start_num=i+1100
+            FOR j=start_num+1 TO start_num+23
+                IF VR(j)=$AF THEN
+                    end_num=j-1
+                    id1_error_count=0
+                    EXIT_LOOP
+                ENDIF
+            NEXT j
+            EXIT_LOOP
+
+
+        ELSE
+            id1_error_count=id1_error_count+1
+        ENDIF
+    NEXT i
+
+    'ID1 check a checksum
+    IF start_num<>0 AND end_num<>0 THEN
+        temp=0
+        FOR i=start_num+2 TO end_num-1
+            temp=temp+VR((i))
+        NEXT i
+        IF HEX(temp AND $FF)=HEX(VR(end_num)) THEN
+
+'            PRINT TIME$
+
+
+            VR(bat2_voltage)=(VR(start_num+6)<<8 + VR(start_num+7))/100 '[V]
+            VR(bat2_current)=(VR(start_num+8)<<8 + VR(start_num+9)) '[A]
+            IF(VR(bat2_current)>=4096) THEN
+                VR(bat2_current)=(65536-VR(bat2_current))*-1
+            ENDIF
+
+'            IF (VR(bat2_current) AND $10000 > 0) THEN
+'                VR(bat2_current) = VR(bat2_current) OR $ffffffffffff0000
+'            ENDIF
+            VR(bat2_current)=VR(bat2_current)/100
+            VR(bat2_soc)=(VR(start_num+10)<<8 + VR(start_num+11)) '[%]
+            VR(bat2_state)=(VR(start_num+12)<<8 + VR(start_num+13)) '[ ]
+            VR(bat2_temperature)=(VR(start_num+14)<<8 + VR(start_num+15))/10 '도씨
+            VR(bat2_current_left)=(VR(start_num+16)<<8 + VR(start_num+17))/100 '[%]0~100
+
+
+
+            'PRINT "BAT1 COMMUNICATION ok"
+'            PRINT "------------------ID:1 배터리 ----------------------------"
+'            PRINT "전압:",VR(bat2_voltage),"[V]" '[V]
+'            PRINT "전류:",VR(bat2_current),"[A]" '[A]
+'            PRINT "SOC:",VR(bat2_soc),"[%]" '[%]
+'            PRINT "배터리상태:",VR(bat2_state) '[ ]
+'            PRINT "온도:",VR(bat2_temperature),"[℃]" '도씨
+'            PRINT "잔류용량:",VR(bat2_current_left),"[Ah]"
+'            PRINT "---------------------------------------------------------"
+
+
+        ENDIF
+    ENDIF
+    start_num=0
+    end_num=0
+
+
+'////////////////////////////////////////////
+'ID 0
+'PARSING
+'////////////////////////////////////////////
+'check data validation and parsing
+    FOR i=0 TO 63
+        IF VR(i+1100)=$AF AND VR(i+1+1100)=$FA AND VR(i+2+1100)=$60 AND VR(i+3+1100)=$0F AND VR(i+4+1100)=$03 AND _
+                VR(i+19+1100)=$AF AND VR(i+20+1100)=$A0 THEN
+            start_num=i+1100
+            FOR j=start_num+1 TO start_num+23
+                IF VR(j)=$AF THEN
+                    end_num=j-1
+                    id0_error_count=0
+                    EXIT_LOOP
+                ENDIF
+            NEXT j
+            EXIT_LOOP
+
+
+        ELSE
+            id0_error_count=id0_error_count+1
+        ENDIF
+    NEXT i
+    'PRINT start_num,end_num
+
+    'check a checksum
+    IF start_num<>0 AND end_num<>0 THEN
+        temp=0
+        FOR i=start_num+2 TO end_num-1
+            temp=temp+VR((i))
+        NEXT i
+        IF HEX(temp AND $FF)=HEX(VR(end_num)) THEN
+
+'            PRINT TIME$
+
+
+            VR(bat1_voltage)=(VR(start_num+6)<<8 + VR(start_num+7))/100 '[V]
+            VR(bat1_current)=(VR(start_num+8)<<8 + VR(start_num+9)) '[A]
+            IF(VR(bat1_current)>=4096) THEN
+                VR(bat1_current)=(65536-VR(bat1_current))*-1
+            ENDIF
+
+'            IF (VR(bat1_current) AND $10000 > 0) THEN
+'                VR(bat1_current) = VR(bat1_current) OR $ffffffffffff0000
+'            ENDIF
+            VR(bat1_current)=VR(bat1_current)/100
+            VR(bat1_soc)=(VR(start_num+10)<<8 + VR(start_num+11)) '[%]
+            VR(bat1_state)=(VR(start_num+12)<<8 + VR(start_num+13)) '[ ]
+            VR(bat1_temperature)=(VR(start_num+14)<<8 + VR(start_num+15))/10 '도씨
+            VR(bat1_current_left)=(VR(start_num+16)<<8 + VR(start_num+17))/100 '[%]0~100
+
+
+            'PRINT "BAT0 COMMUNICATION ok"
+'            PRINT "------------------ID:0 배터리 ----------------------------"
+'            PRINT "전압:",VR(bat1_voltage),"[V]" '[V]
+'            PRINT "전류:",VR(bat1_current),"[A]" '[A]
+'            PRINT "SOC:",VR(bat1_soc),"[%]" '[%]
+'            PRINT "배터리상태:",VR(bat1_state) '[ ]
+'            PRINT "온도:",VR(bat1_temperature),"[℃]" '도씨
+'            PRINT "잔류용량:",VR(bat1_current_left),"[Ah]"
+'            PRINT "---------------------------------------------------------"
+'            PRINT "/////////////////////////////////////////////////////////"
+
+        ENDIF
+    ENDIF
+
+
+    'BATTERY1 EMERGENCY
+'    IF VR(bat1_state)<>0 THEN
+'        SELECT_CASE bat1_state
+'            CASE 1
+'                PRINT "OVER VOLTAGE"
+'            CASE 2
+'                PRINT "UNDER VOLGATE"
+'            CASE 4
+'                PRINT "OVER CHARGING CURRENT"
+'            CASE 8
+'                PRINT "OVER CONSUMPTION CURRENT"
+'            CASE 16
+'                PRINT "OVER TEMP"
+'            CASE 32
+'                PRINT "LOW TEMP"
+'            CASE 64
+'                PRINT "BMU ERROR"
+'                WDOG =OFF
+'        END_CASE
+'    ENDIF
+'
+'    'BATTERY2 EMERGENCY
+'    IF VR(bat2_state)<>0 THEN
+'        SELECT_CASE bat2_state
+'            CASE 1
+'            PRINT "OVER VOLTAGE"
+'            CASE 2
+'            PRINT "UNDER VOLGATE"
+'            CASE 4
+'            PRINT "OVER CHARGING CURRENT"
+'            CASE 8
+'            PRINT "OVER CONSUMPTION CURRENT"
+'            CASE 16
+'            PRINT "OVER TEMP"
+'            CASE 32
+'            PRINT "LOW TEMP"
+'            CASE 64
+'            PRINT "BMU ERROR"
+'            WDOG =OFF
+'    END_CASE
+'
+'    ENDIF
+
+    IF id0_error_count>=630 THEN
+        PRINT "ID0_TABOS communication error"
+        STOP "TABOS_2EA_485"
+    ENDIF
+    IF id1_error_count>=630 THEN
+        PRINT "ID1_TABOS communication error"
+        STOP "TABOS_2EA_485"
+    ENDIF
+    FOR i=1100 TO 1199
+        VR(i)=0
+    NEXT i
+
+WEND
+

@@ -1,0 +1,178 @@
+DIM acc_dec AS INTEGER
+DIM target_rpm AS INTEGER
+DIM rotate_ratio AS INTEGER
+DIM repet_distance AS INTEGER
+DIM repeat_wait AS INTEGER
+DIM trio_count AS INTEGER
+
+acc_dec=20
+target_rpm=21
+rotate_ratio=22
+repet_distance=23
+repeat_wait=24
+
+
+VR(20)=1000 'ACC,DEC(0~2000)
+VR(21)=500 'RPM(0~2344.5)
+VR(22)=0.3 'ROTATE VEL RATIO(0~1)
+VR(23)=20000 'REPET DISTANCE[mm]
+VR(24)=2000 'REPEAT WAIT
+
+
+WHILE TRUE
+    SELECT_CASE VR(2)
+        CASE 1 'left_go
+            OP(26,ON)
+            OP(18,ON)
+            OP(21,ON)
+            WA(1)
+            IF MTYPE AXIS(0)<>10 THEN
+                FORWARD AXIS(0)
+                SERVO AXIS(0)=ON
+            ENDIF
+            IF MTYPE AXIS(1)<>10 THEN
+                FORWARD AXIS(1)
+                SERVO AXIS(1)=ON
+            ENDIF
+
+            ACCEL AXIS(0)=VR(acc_dec)
+            ACCEL AXIS(1)=VR(acc_dec)
+            SPEED AXIS(0) = -VR(target_rpm)
+            SPEED AXIS(1) = VR(target_rpm)*0.5
+
+        CASE 2 'go
+            OP(26,ON)
+            OP(18,ON)
+            OP(21,ON)
+            WA(1)
+            IF MTYPE AXIS(0)<>10 THEN
+                FORWARD AXIS(0)
+                SERVO AXIS(0)=ON
+            ENDIF
+            IF MTYPE AXIS(1)<>10 THEN
+                FORWARD AXIS(1)
+                SERVO AXIS(1)=ON
+            ENDIF
+
+            ACCEL AXIS(0)=VR(acc_dec)
+            ACCEL AXIS(1)=VR(acc_dec)
+            SPEED AXIS(0) = -VR(target_rpm)
+            SPEED AXIS(1) = VR(target_rpm)
+        CASE 3 'right_go
+            OP(26,ON)
+            OP(18,ON)
+            OP(21,ON)
+            WA(1)
+            IF MTYPE AXIS(0)<>10 THEN
+                FORWARD AXIS(0)
+                SERVO AXIS(0)=ON
+            ENDIF
+            IF MTYPE AXIS(1)<>10 THEN
+                FORWARD AXIS(1)
+                SERVO AXIS(1)=ON
+            ENDIF
+
+            ACCEL AXIS(0)=VR(acc_dec)
+            ACCEL AXIS(1)=VR(acc_dec)
+            SPEED AXIS(0) = -VR(target_rpm)*0.5
+            SPEED AXIS(1) = VR(target_rpm)
+        CASE 4 'right
+            OP(26,ON)
+            OP(18,ON)
+            OP(21,ON)
+            WA(1)
+            IF MTYPE AXIS(0)<>10 THEN
+                FORWARD AXIS(0)
+                SERVO AXIS(0)=ON
+            ENDIF
+            IF MTYPE AXIS(1)<>10 THEN
+                FORWARD AXIS(1)
+                SERVO AXIS(1)=ON
+            ENDIF
+            ACCEL AXIS(0)=VR(acc_dec)
+            ACCEL AXIS(1)=VR(acc_dec)
+            SPEED AXIS(0) = VR(target_rpm)*VR(rotate_ratio)
+            SPEED AXIS(1) = VR(target_rpm)*VR(rotate_ratio)
+
+        CASE 5 'right_back
+            OP(26,ON)
+            OP(18,ON)
+            OP(21,ON)
+            WA(1)
+            IF MTYPE AXIS(0)<>10 THEN
+                FORWARD AXIS(0)
+                SERVO AXIS(0)=ON
+            ENDIF
+            IF MTYPE AXIS(1)<>10 THEN
+                FORWARD AXIS(1)
+                SERVO AXIS(1)=ON
+            ENDIF
+
+            ACCEL AXIS(0)=VR(acc_dec)
+            ACCEL AXIS(1)=VR(acc_dec)
+            SPEED AXIS(0) = VR(target_rpm)*0.5
+            SPEED AXIS(1) = -VR(target_rpm)
+        CASE 6 'back
+            OP(26,ON)
+            OP(18,ON)
+            OP(21,ON)
+            WA(1)
+            IF MTYPE AXIS(0)<>10 THEN
+                FORWARD AXIS(0)
+                SERVO AXIS(0)=ON
+            ENDIF
+            IF MTYPE AXIS(1)<>10 THEN
+                FORWARD AXIS(1)
+                SERVO AXIS(1)=ON
+            ENDIF
+
+            ACCEL AXIS(0)=VR(acc_dec)
+            ACCEL AXIS(1)=VR(acc_dec)
+            SPEED AXIS(0) = VR(target_rpm)
+            SPEED AXIS(1) = -VR(target_rpm)
+        CASE 7 'left_back
+            OP(26,ON)
+            OP(18,ON)
+            OP(21,ON)
+            WA(1)
+            IF MTYPE AXIS(0)<>10 THEN
+                FORWARD AXIS(0)
+                SERVO AXIS(0)=ON
+            ENDIF
+            IF MTYPE AXIS(1)<>10 THEN
+                FORWARD AXIS(1)
+                SERVO AXIS(1)=ON
+            ENDIF
+
+            ACCEL AXIS(0)=VR(acc_dec)
+            ACCEL AXIS(1)=VR(acc_dec)
+            SPEED AXIS(0) = VR(target_rpm)
+            SPEED AXIS(1) = -VR(target_rpm)*0.5
+        CASE 8 'left
+            OP(26,ON)
+            OP(18,ON)
+            OP(21,ON)
+            WA(1)
+            IF MTYPE AXIS(0)<>10 THEN
+                FORWARD AXIS(0)
+                SERVO AXIS(0)=ON
+            ENDIF
+
+            IF MTYPE AXIS(1)<>10 THEN
+                FORWARD AXIS(1)
+                SERVO AXIS(1)=ON
+            ENDIF
+            ACCEL AXIS(0)=VR(acc_dec)
+            ACCEL AXIS(1)=VR(acc_dec)
+            SPEED AXIS(0) = -VR(target_rpm)*VR(rotate_ratio)
+            SPEED AXIS(1) = -VR(target_rpm)*VR(rotate_ratio)
+        CASE ELSE
+            OP(26,OFF)
+            OP(18,OFF)
+            OP(21,OFF)
+            SPEED AXIS(0) = 0
+            SPEED AXIS(1) = 0
+            CANCEL AXIS(0)
+            CANCEL AXIS(1)
+    END_CASE
+WEND

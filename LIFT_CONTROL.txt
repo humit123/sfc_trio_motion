@@ -1,0 +1,33 @@
+WHILE TRUE
+
+'TO VR VARIABLE
+    IF VR(26)=1 AND VR(33)=0 OR VR(2500)=2 THEN'down
+        OP(12,ON)
+        OP(13,ON)
+        WA(1)
+        IF IN(17)=1 THEN
+            OP(11,OFF)
+        ELSE
+            OP(11,ON)
+        ENDIF
+    ELSEIF VR(26)=-1 AND VR(33)=0 OR VR(2500)=1 THEN'up
+        OP(12,OFF)
+        OP(13,OFF)
+        WA(1)
+        IF IN(16)=1 THEN
+            OP(11,OFF)
+        ELSE
+            OP(11,ON)
+        ENDIF
+    ELSEIF VR(26)=0 OR VR(33)=1 OR VR(2500)=0 THEN
+        OP(11,OFF)
+    ENDIF
+
+    'PEST
+    IF VR(2600)=1 THEN
+        OP(22,ON)
+    ELSEIF VR(2600)=0 THEN
+        OP(22,OFF)
+    ENDIF
+
+WEND

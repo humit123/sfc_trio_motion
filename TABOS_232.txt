@@ -1,0 +1,124 @@
+'baudrate 115200, 8bit, 1stopbit, none parity,
+
+SETCOM(19200,8,1,0,1,1)
+
+'DIM b AS STRING
+DIM recv_data AS STRING(100)
+
+DIM b AS STRING ( 100 )
+DIM d AS STRING ( 3 )
+d=CHR(160)+CHR(13)+CHR(10)
+
+WHILE TRUE
+
+    WA(1000)
+    PRINT #1, CHR($AF);CHR($FA);CHR($60);CHR($05);CHR($01);CHR($60);CHR($4F);CHR($03);CHR($18);CHR($AF);CHR($A0);
+    WA(1)
+
+    'READPACKET(2,1100,72,0)
+    'recv_data = VRSTRING(1100)
+
+
+'        WAIT UNTIL KEY#2
+'
+'        count=1100
+'
+'    WHILE char<> $D 'carrage RETURN
+'        GET#2, char
+'        PRINT char
+'        VR(count)=char
+'        count=count+1
+'    WEND
+'    PRINT "=="
+'    char=0
+'
+''
+
+
+'    s=CHANNEL_READ( 2 ,b,d)
+'    'PRINT "LEn : ",LEN(b)
+'    'PRINT b
+'    VR(1100)=b
+'    ' if we have characters then print them
+'    IF (s < 0) THEN
+'        IF s = - 1 THEN
+'            'PRINT "--- CARRIAGE RETURN ----"
+'        ELSEIF s=- 2 THEN
+'            'PRINT "--- LINE FEED ----"
+'        ENDIF
+'
+'        'PRINT b
+'        'PRINT "--- END OF BUFFER ----"
+'    ENDIF
+
+
+    count=0
+    WHILE KEY #1
+        count=count+1
+        GET #1, VR(1100+count)
+    WEND
+    'PRINT "abc"
+
+    'check data validation and parsing
+    FOR i=0 TO 36
+        IF VR(i+1100)=$AF AND VR(i+1+1100)=$FA AND VR(i+2+1100)=$60 AND VR(i+3+1100)=$11 AND VR(i+4+1100)=$03 AND _
+                VR(i+21+1100)=$AF AND VR(i+22+1100)=$A0 THEN
+            start_num=i+1100
+            FOR j=start_num+1 TO start_num+23
+                IF VR(j)=$AF THEN
+                    end_num=j-1
+                    EXIT_LOOP
+                ENDIF
+            NEXT j
+            EXIT_LOOP
+        ELSEIF VR(i+1+1100)=$FA AND VR(i+2+1100)=$60 AND VR(i+3+1100)=$11 AND VR(i+4+1100)=$1F THEN
+            PRINT "TABOS communication error"
+            STOP "TABOS_485"
+        ENDIF
+    NEXT i
+    'PRINT start_num,end_num
+
+    'check a checksum
+    IF start_num<>0 AND end_num<>0 THEN
+            temp=0
+            FOR i=start_num+2 TO end_num-1
+                temp=temp+VR((i))
+            NEXT i
+            IF HEX(temp AND $FF)=HEX(VR(end_num)) THEN
+                'PRINT "valid"
+
+
+                VR(3)=(VR(start_num+6)<<8 + VR(start_num+7))/100 '[V]
+                VR(4)=(VR(start_num+8)<<8 + VR(start_num+9))/100 '[A]
+                VR(5)=(VR(start_num+10)<<8 + VR(start_num+11)) '[%]
+                VR(6)=(VR(start_num+12)<<8 + VR(start_num+13)) '[ ]
+                VR(7)=(VR(start_num+14)<<8 + VR(start_num+15))/10 '도씨
+                VR(8)=(VR(start_num+16)<<8 + VR(start_num+17)) '[%]0~100
+                VR(9)=(VR(start_num+18)<<8 + VR(start_num+19))/100 'Ah 0~655.35
+
+
+                PRINT "---------------------- 배터리 ----------------------------"
+                PRINT "전압:",VR(3),"[V]" '[V]
+                PRINT "전류:",VR(4),"[A]" '[A]
+                PRINT "SOC:",VR(5),"[%]" '[%]
+                PRINT "배터리상태:",VR(6) '[ ]
+                PRINT "온도:",VR(7),"[℃]" '도씨
+                PRINT "SOH:",VR(8),"[%]"
+                PRINT "잔류용량:",VR(9),"[Ah]"
+                PRINT "---------------------------------------------------------"
+
+            ENDIF
+    ENDIF
+
+
+
+    start_num=0
+    end_num=0
+
+
+    FOR i=1100 TO 1200
+        VR(i)=0
+    NEXT i
+
+
+WEND
